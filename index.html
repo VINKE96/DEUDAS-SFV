@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>CONSULTA ESTADO FISE</title>
+  <title>CONSULTA DEUDAS SFV</title>
 
   <!-- Librerías -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -21,7 +21,7 @@
     body{font-family:Inter, Arial, sans-serif;background:var(--bg);margin:0;padding:18px;color:#222}
     header{display:flex;align-items:center;gap:12px}
     header img{height:64px}
-    .title{font-size:20px;font-weight:700;color:var(--azul)}
+    .title{font-size:22px;font-weight:700;color:var(--azul)}
     .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
     input[type="text"]{padding:10px;border-radius:6px;border:1px solid #ccc;min-width:220px}
     button{background:var(--azul);color:white;border:none;padding:10px 12px;border-radius:6px;cursor:pointer}
@@ -29,9 +29,9 @@
     .card{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 6px 20px rgba(10,20,40,0.06);margin-top:12px}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+    th{background:#e3f2fd;}
     .small{font-size:13px;color:#666}
     .top-row{display:flex;align-items:center;gap:12px;justify-content:space-between}
-    .note{font-size:13px;color:#555;margin-top:8px}
     #progress{color:var(--azul);font-weight:600;margin-top:6px}
     tr.total-row td{font-weight:bold;background:#eaf3ff;}
     @media(max-width:720px){ header{flex-direction:column;align-items:flex-start} }
@@ -42,8 +42,8 @@
   <header>
     <img id="repo-logo" src="assets/logo.png" alt="Logo" onerror="this.style.display='none'">
     <div>
-      <div class="title">CONSULTA ESTADO FISE</div>
-      <div class="small">Busca por DNI, código o nombre — exporta a Excel o PDF</div>
+      <div class="title">CONSULTA DEUDAS SFV</div>
+      <div class="small">Busca por DNI o Código de Usuario — exporta a Excel o PDF</div>
     </div>
   </header>
 
@@ -56,21 +56,13 @@
       </div>
 
       <div style="display:flex;gap:8px;align-items:center">
-        <input id="searchInput" type="text" placeholder="Ingresar DNI, nombre o distrito" />
+        <input id="searchInput" type="text" placeholder="Ingresar DNI o Código de Usuario" />
         <button id="btnSearch">Buscar</button>
         <button id="btnClear" class="secondary">Limpiar</button>
       </div>
     </div>
 
     <div id="progress"></div>
-
-    <div class="note">
-      <ul>
-        <li>Sube tus archivos <code>data_1.json</code>, <code>data_2.json</code>, etc., junto al HTML.</li>
-        <li>En “Base” escribe <code>data</code> (sin número) y presiona <b>Cargar datos</b>.</li>
-        <li>O usa <b>Cargar archivo local</b> si prefieres leer desde tu PC.</li>
-      </ul>
-    </div>
   </div>
 
   <div id="resultsCard" class="card" style="display:none">
@@ -97,7 +89,7 @@ let currentResults = [];
 function showMessage(msg){ alert(msg); }
 function normalizeKey(k){ return k.toString().toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9ñ]/gi,'').trim(); }
 
-/* Cargar múltiples archivos JSON */
+/* 🔹 Cargar múltiples archivos JSON */
 async function loadFromRepo(baseName){
   if(!baseName) baseName="data";
   DB=[]; let index=1,total=0;
@@ -121,7 +113,7 @@ async function loadFromRepo(baseName){
   renderResults();
 }
 
-/* Cargar archivo local */
+/* 🔹 Cargar archivo local */
 function loadFromLocalFile(file){
   const reader=new FileReader();
   reader.onload=function(e){
@@ -134,23 +126,26 @@ function loadFromLocalFile(file){
   reader.readAsText(file);
 }
 
-/* 🔍 Buscar coincidencias en cualquier campo */
+/* 🔹 Buscar solo por DNI o Código de Usuario */
 function searchTerm(term){
   const q = term.trim().toLowerCase();
   if(!q){ currentResults=[]; renderResults(); return; }
 
   currentResults = DB.filter(r=>{
+    let dni='', codigo='';
     for(const k in r){
-      const val = (r[k] || '').toString().toLowerCase();
-      if(val.includes(q)) return true;
+      const nk=normalizeKey(k);
+      const val=(r[k]||'').toString().toLowerCase();
+      if(nk.includes('dni')) dni=val;
+      if(nk.includes('codigousuario')) codigo=val;
     }
-    return false;
+    return dni.includes(q) || codigo.includes(q);
   });
 
   renderResults();
 }
 
-/* Render tabla con columnas fijas + TOTAL */
+/* 🔹 Render tabla con columnas fijas + TOTAL */
 function renderResults(){
   const card=document.getElementById('resultsCard');
   const tbody=document.querySelector('#resultsTable tbody');
@@ -160,7 +155,7 @@ function renderResults(){
   card.style.display='block';
   document.getElementById('countLbl').innerText=currentResults.length;
 
-  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
+  const headers=['DNI','UU.NN','CODIGO USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
   const headerRow=document.createElement('tr');
   headers.forEach(h=>{const th=document.createElement('th');th.textContent=h;headerRow.appendChild(th);});
   thead.appendChild(headerRow);
@@ -197,10 +192,10 @@ function renderResults(){
   tbody.appendChild(trTotal);
 }
 
-/* Exportar a Excel */
+/* 🔹 Exportar a Excel */
 function exportToExcel(){
   if(!currentResults.length){showMessage('No hay resultados');return;}
-  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
+  const headers=['DNI','UU.NN','CODIGO USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
   const ws_data=[headers];
   let totalMonto=0;
   currentResults.forEach(r=>{
@@ -219,17 +214,17 @@ function exportToExcel(){
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(ws_data);
   XLSX.utils.book_append_sheet(wb,ws,'Resultados');
   const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
-  saveAs(new Blob([wbout],{type:'application/octet-stream'}),'resultados_fise.xlsx');
+  saveAs(new Blob([wbout],{type:'application/octet-stream'}),'deudas_sfv.xlsx');
 }
 
-/* Exportar a PDF */
+/* 🔹 Exportar a PDF */
 function exportToPDF(){
   if(!currentResults.length){showMessage('No hay resultados');return;}
   const { jsPDF }=window.jspdf; const doc=new jsPDF('l','pt','a4');
   const img=document.getElementById('repo-logo');
   try{if(img && img.complete && img.naturalWidth!==0) doc.addImage(img,'PNG',40,20,80,40);}catch(e){}
-  doc.setFontSize(14); doc.text('Reporte - Consulta Estado FISE',150,40);
-  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
+  doc.setFontSize(14); doc.text('Reporte - Consulta Deudas SFV',150,40);
+  const headers=['DNI','UU.NN','CODIGO USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
   const rows=[]; let totalMonto=0;
   currentResults.forEach(r=>{
     const row=[];
@@ -245,10 +240,10 @@ function exportToPDF(){
   totalRow[0]='TOTAL'; totalRow[6]=totalMonto.toFixed(2);
   rows.push(totalRow);
   doc.autoTable({head:[headers],body:rows,startY:80,styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:[13,71,161]}});
-  doc.save('resultados_fise.pdf');
+  doc.save('deudas_sfv.pdf');
 }
 
-/* Eventos */
+/* 🔹 Eventos */
 document.getElementById('btnLoad').addEventListener('click',()=>{const base=document.getElementById('fileName').value.trim();loadFromRepo(base||'data');});
 document.getElementById('btnLoadLocal').addEventListener('click',()=>{const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=e=>{if(e.target.files[0])loadFromLocalFile(e.target.files[0]);};inp.click();});
 document.getElementById('btnSearch').addEventListener('click',()=>{searchTerm(document.getElementById('searchInput').value);});
