@@ -6,7 +6,6 @@
   <title>CONSULTA ESTADO FISE</title>
 
   <!-- Librerías -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -28,12 +27,13 @@
     button{background:var(--azul);color:white;border:none;padding:10px 12px;border-radius:6px;cursor:pointer}
     button.secondary{background:var(--verde)}
     .card{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 6px 20px rgba(10,20,40,0.06);margin-top:12px}
-    table{width:100%;border-collapse:collapse}
+    table{width:100%;border-collapse:collapse;font-size:13px}
     th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
     .small{font-size:13px;color:#666}
     .top-row{display:flex;align-items:center;gap:12px;justify-content:space-between}
     .note{font-size:13px;color:#555;margin-top:8px}
-    #progress{color:#0D47A1;font-weight:600;margin-top:6px}
+    #progress{color:var(--azul);font-weight:600;margin-top:6px}
+    tr.total-row td{font-weight:bold;background:#eaf3ff;}
     @media(max-width:720px){ header{flex-direction:column;align-items:flex-start} }
   </style>
 </head>
@@ -84,15 +84,7 @@
 
     <div style="overflow:auto;margin-top:12px">
       <table id="resultsTable">
-        <thead>
-          <tr>
-            <th>DNI</th>
-            <th>TIPO DE BENEFICIARIO</th>
-            <th>ESTADO FISE</th>
-            <th>OBSERVACIÓN</th>
-            <th>SUMINISTRO</th>
-          </tr>
-        </thead>
+        <thead></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -102,192 +94,147 @@
 let DB = [];
 let currentResults = [];
 
+/* ========== UTILIDADES ========== */
 function showMessage(msg){ alert(msg); }
 
-/* 🔹 NUEVO: carga múltiple data_1.json, data_2.json, etc. */
+/* 🔹 Cargar múltiples archivos data_1.json, data_2.json, ... */
 async function loadFromRepo(baseName){
-  if(!baseName) baseName = "data";
-  DB = [];
-  let index = 1;
-  let total = 0;
-  const progress = document.getElementById("progress");
-  progress.innerText = "Cargando...";
+  if(!baseName) baseName="data";
+  DB=[]; let index=1,total=0;
+  const progress=document.getElementById("progress");
+  progress.innerText="Cargando...";
   while(true){
-    const fileName = `${baseName}_${index}.json`;
+    const fileName=`${baseName}_${index}.json`;
     try{
-      const resp = await fetch(fileName);
-      if(!resp.ok){
-        if(index===1) throw new Error("No se encontró el archivo " + fileName);
-        else break;
-      }
-      const json = await resp.json();
-      if(Array.isArray(json)){
-        DB = DB.concat(json);
-        total += json.length;
-        progress.innerText = `Cargado ${fileName} (${json.length} registros, total ${total})`;
-        console.log(`✔ ${fileName} (${json.length})`);
-      } else {
-        console.warn(fileName + " no es un array válido");
-      }
+      const resp=await fetch(fileName);
+      if(!resp.ok){ if(index===1) throw new Error("No se encontró "+fileName); else break; }
+      const json=await resp.json();
+      if(Array.isArray(json)){ DB=DB.concat(json); total+=json.length;
+        progress.innerText=`Cargado ${fileName} (${json.length} registros, total ${total})`;
+      } else console.warn(fileName+" no es un array válido");
       index++;
-    }catch(e){
-      if(index===1) showMessage("Error al cargar: " + e.message);
-      break;
-    }
+    }catch(e){ if(index===1) showMessage("Error: "+e.message); break; }
   }
   if(total===0){ progress.innerText="No se cargaron datos."; return; }
-  normalizeDB();
-  progress.innerText = `Carga completada: ${total} registros.`;
+  progress.innerText=`Carga completada: ${total} registros.`;
   renderResults();
 }
 
 /* 🔹 Cargar archivo local */
 function loadFromLocalFile(file){
-  const reader = new FileReader();
-  reader.onload = function(e){
-    const text = e.target.result;
-    let json;
+  const reader=new FileReader();
+  reader.onload=function(e){
     try{
-      json = JSON.parse(text);
-      if(!Array.isArray(json)) throw new Error("Debe ser un array de objetos");
-    }catch(err){
-      showMessage("Archivo JSON inválido: " + err.message);
-      return;
-    }
-    DB = json;
-    normalizeDB();
-    showMessage(`Cargado ${DB.length} registros.`);
-    renderResults();
+      const json=JSON.parse(e.target.result);
+      if(!Array.isArray(json)) throw new Error("Debe ser un array");
+      DB=json; showMessage(`Cargado ${DB.length} registros.`); renderResults();
+    }catch(err){ showMessage("Error JSON: "+err.message); }
   };
   reader.readAsText(file);
-}
-
-/* 🔹 Normalizar claves */
-function normalizeDB(){
-  DB = DB.map(r=>{
-    const o={};
-    Object.keys(r).forEach(k=>{
-      const lk=k.toLowerCase();
-      const v=(r[k]||'').toString().trim();
-      if(lk.includes('dni')) o.dni=v;
-      else if(lk.includes('sumin')) o.suministro=v;
-      else if(lk.includes('tipo')) o.tipo=v;
-      else if(lk.includes('estado')) o.estado=v;
-      else if(lk.includes('observ')) o.observacion=v;
-    });
-    return o;
-  });
 }
 
 /* 🔹 Buscar */
 function searchTerm(term){
   if(!term){ currentResults=[]; renderResults(); return; }
   const q=term.trim().toLowerCase();
-  currentResults=DB.filter(r=>
-    (r.dni && r.dni.toLowerCase().includes(q)) ||
-    (r.suministro && r.suministro.toLowerCase().includes(q))
-  );
+  currentResults=DB.filter(r=>{
+    return (r["DNI"] && r["DNI"].toString().toLowerCase().includes(q)) ||
+           (r["SUMINISTRO"] && r["SUMINISTRO"].toString().toLowerCase().includes(q)) ||
+           (r["CODIGO DE USUARIO"] && r["CODIGO DE USUARIO"].toString().toLowerCase().includes(q));
+  });
   renderResults();
 }
 
-/* 🔹 Render tabla dinámica según las cabeceras del JSON */
+/* 🔹 Render tabla con columnas fijas + TOTAL */
 function renderResults(){
-  const card = document.getElementById('resultsCard');
-  const tbody = document.querySelector('#resultsTable tbody');
-  const thead = document.querySelector('#resultsTable thead');
-  tbody.innerHTML = '';
-  thead.innerHTML = '';
+  const card=document.getElementById('resultsCard');
+  const tbody=document.querySelector('#resultsTable tbody');
+  const thead=document.querySelector('#resultsTable thead');
+  tbody.innerHTML=''; thead.innerHTML='';
+  if(!currentResults.length){card.style.display='none';document.getElementById('countLbl').innerText='0';return;}
+  card.style.display='block';
+  document.getElementById('countLbl').innerText=currentResults.length;
 
-  if(!currentResults.length){
-    card.style.display = 'none';
-    document.getElementById('countLbl').innerText = '0';
-    return;
-  }
+  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTROPOBLADO','ESTADO'];
 
-  card.style.display = 'block';
-  document.getElementById('countLbl').innerText = currentResults.length;
-
-  // Detectar automáticamente las cabeceras del primer registro
-  const headers = Object.keys(currentResults[0]);
-
-  // Crear cabeceras de tabla
-  const headerRow = document.createElement('tr');
-  headers.forEach(h => {
-    const th = document.createElement('th');
-    th.textContent = h.toUpperCase();
-    headerRow.appendChild(th);
-  });
+  // Cabecera
+  const headerRow=document.createElement('tr');
+  headers.forEach(h=>{const th=document.createElement('th');th.textContent=h;headerRow.appendChild(th);});
   thead.appendChild(headerRow);
 
-  // Crear filas de datos
-  currentResults.forEach(r => {
-    const tr = document.createElement('tr');
-    headers.forEach(h => {
-      const td = document.createElement('td');
-      td.textContent = r[h] || '';
-      tr.appendChild(td);
+  // Filas
+  let totalMonto=0;
+  currentResults.forEach(r=>{
+    const tr=document.createElement('tr');
+    headers.forEach(h=>{
+      let val=r[h]||'';
+      if(h==='MONTO'){
+        const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,''));
+        if(!isNaN(num)) totalMonto+=num;
+      }
+      const td=document.createElement('td');td.textContent=val;tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
+
+  // Fila total
+  const trTotal=document.createElement('tr');trTotal.classList.add('total-row');
+  headers.forEach(h=>{
+    const td=document.createElement('td');
+    if(h==='MONTO'){td.textContent=totalMonto.toFixed(2);}
+    else if(h==='DNI'){td.textContent='TOTAL';}
+    trTotal.appendChild(td);
+  });
+  tbody.appendChild(trTotal);
 }
 
-/* 🔹 Exportar Excel */
+/* 🔹 Exportar a Excel */
 function exportToExcel(){
-  if(!currentResults.length){showMessage('No hay resultados.');return;}
-  const ws_data=[['DNI','TIPO DE BENEFICIARIO','ESTADO FISE','OBSERVACIÓN','SUMINISTRO']];
-  currentResults.forEach(r=>ws_data.push([r.dni||'',r.tipo||'',r.estado||'',r.observacion||'',r.suministro||'']));
-  const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet(ws_data);
+  if(!currentResults.length){showMessage('No hay resultados');return;}
+  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTROPOBLADO','ESTADO'];
+  const ws_data=[headers];
+  let totalMonto=0;
+  currentResults.forEach(r=>{
+    const row=headers.map(h=>{
+      const val=r[h]||''; if(h==='MONTO'){const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,''));if(!isNaN(num))totalMonto+=num;} return val;
+    });
+    ws_data.push(row);
+  });
+  const totalRow=Array(headers.length).fill(''); totalRow[0]='TOTAL'; totalRow[6]=totalMonto.toFixed(2); ws_data.push(totalRow);
+  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(ws_data);
   XLSX.utils.book_append_sheet(wb,ws,'Resultados');
   const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
   saveAs(new Blob([wbout],{type:'application/octet-stream'}),'resultados_fise.xlsx');
 }
 
-/* 🔹 Exportar PDF */
+/* 🔹 Exportar a PDF */
 function exportToPDF(){
-  if(!currentResults.length){showMessage('No hay resultados.');return;}
-  const { jsPDF }=window.jspdf;
-  const doc=new jsPDF('p','pt','a4');
+  if(!currentResults.length){showMessage('No hay resultados');return;}
+  const { jsPDF }=window.jspdf; const doc=new jsPDF('l','pt','a4');
   const img=document.getElementById('repo-logo');
-  try{
-    if(img && img.complete && img.naturalWidth!==0) doc.addImage(img,'PNG',40,20,80,40);
-  }catch(e){console.warn('Logo no añadido (CORS)',e);}
-  doc.setFontSize(14);
-  doc.text('Reporte - Consulta Estado FISE',140,40);
-  const columns=['DNI','TIPO DE BENEFICIARIO','ESTADO FISE','OBSERVACIÓN','SUMINISTRO'];
-  const rows=currentResults.map(r=>[r.dni||'',r.tipo||'',r.estado||'',r.observacion||'',r.suministro||'']);
-  doc.autoTable({head:[columns],body:rows,startY:80,styles:{fontSize:9,cellPadding:4},headStyles:{fillColor:[13,71,161]}});
+  try{if(img && img.complete && img.naturalWidth!==0) doc.addImage(img,'PNG',40,20,80,40);}catch(e){}
+  doc.setFontSize(14); doc.text('Reporte - Consulta Estado FISE',150,40);
+  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTROPOBLADO','ESTADO'];
+  const rows=[]; let totalMonto=0;
+  currentResults.forEach(r=>{
+    const row=headers.map(h=>{
+      const val=r[h]||''; if(h==='MONTO'){const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,''));if(!isNaN(num))totalMonto+=num;} return val;
+    });
+    rows.push(row);
+  });
+  const totalRow=Array(headers.length).fill(''); totalRow[0]='TOTAL'; totalRow[6]=totalMonto.toFixed(2); rows.push(totalRow);
+  doc.autoTable({head:[headers],body:rows,startY:80,styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:[13,71,161]}});
   doc.save('resultados_fise.pdf');
 }
 
 /* 🔹 Eventos */
-document.getElementById('btnLoad').addEventListener('click',()=>{
-  const base=document.getElementById('fileName').value.trim();
-  loadFromRepo(base||'data');
-});
-document.getElementById('btnLoadLocal').addEventListener('click',()=>{
-  const inp=document.createElement('input');
-  inp.type='file'; inp.accept='.json';
-  inp.onchange=e=>{
-    const file=e.target.files[0];
-    if(file) loadFromLocalFile(file);
-  };
-  inp.click();
-});
-document.getElementById('btnSearch').addEventListener('click',()=>{
-  const t=document.getElementById('searchInput').value;
-  searchTerm(t);
-});
-document.getElementById('btnClear').addEventListener('click',()=>{
-  document.getElementById('searchInput').value='';
-  currentResults=[]; renderResults();
-});
+document.getElementById('btnLoad').addEventListener('click',()=>{const base=document.getElementById('fileName').value.trim();loadFromRepo(base||'data');});
+document.getElementById('btnLoadLocal').addEventListener('click',()=>{const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=e=>{if(e.target.files[0])loadFromLocalFile(e.target.files[0]);};inp.click();});
+document.getElementById('btnSearch').addEventListener('click',()=>{searchTerm(document.getElementById('searchInput').value);});
+document.getElementById('btnClear').addEventListener('click',()=>{document.getElementById('searchInput').value='';currentResults=[];renderResults();});
 document.getElementById('btnExportExcel').addEventListener('click',exportToExcel);
 document.getElementById('btnExportPDF').addEventListener('click',exportToPDF);
-document.getElementById('searchInput').addEventListener('keydown',e=>{
-  if(e.key==='Enter') document.getElementById('btnSearch').click();
-});
+document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('btnSearch').click();});
 </script>
 </body>
 </html>
-
