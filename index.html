@@ -190,18 +190,43 @@ function searchTerm(term){
   renderResults();
 }
 
-/* 🔹 Render tabla */
+/* 🔹 Render tabla dinámica según las cabeceras del JSON */
 function renderResults(){
-  const card=document.getElementById('resultsCard');
-  const tbody=document.querySelector('#resultsTable tbody');
-  tbody.innerHTML='';
-  if(!currentResults.length){card.style.display='none';document.getElementById('countLbl').innerText='0';return;}
-  card.style.display='block';
-  document.getElementById('countLbl').innerText=currentResults.length;
-  currentResults.forEach(r=>{
-    const tr=document.createElement('tr');
-    const td=v=>{const c=document.createElement('td');c.textContent=v||'';return c;};
-    tr.append(td(r.dni),td(r.tipo),td(r.estado),td(r.observacion),td(r.suministro));
+  const card = document.getElementById('resultsCard');
+  const tbody = document.querySelector('#resultsTable tbody');
+  const thead = document.querySelector('#resultsTable thead');
+  tbody.innerHTML = '';
+  thead.innerHTML = '';
+
+  if(!currentResults.length){
+    card.style.display = 'none';
+    document.getElementById('countLbl').innerText = '0';
+    return;
+  }
+
+  card.style.display = 'block';
+  document.getElementById('countLbl').innerText = currentResults.length;
+
+  // Detectar automáticamente las cabeceras del primer registro
+  const headers = Object.keys(currentResults[0]);
+
+  // Crear cabeceras de tabla
+  const headerRow = document.createElement('tr');
+  headers.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h.toUpperCase();
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+
+  // Crear filas de datos
+  currentResults.forEach(r => {
+    const tr = document.createElement('tr');
+    headers.forEach(h => {
+      const td = document.createElement('td');
+      td.textContent = r[h] || '';
+      tr.appendChild(td);
+    });
     tbody.appendChild(tr);
   });
 }
@@ -265,3 +290,4 @@ document.getElementById('searchInput').addEventListener('keydown',e=>{
 </script>
 </body>
 </html>
+
