@@ -94,10 +94,17 @@
 let DB = [];
 let currentResults = [];
 
-/* ========== UTILIDADES ========== */
 function showMessage(msg){ alert(msg); }
 
-/* 🔹 Cargar múltiples archivos data_1.json, data_2.json, ... */
+/* 🔹 Normaliza nombre de clave (sin tildes, espacios ni caracteres especiales) */
+function normalizeKey(k){
+  return k.toString().toLowerCase()
+    .replace(/\s+/g,'')
+    .replace(/[^a-z0-9ñ]/gi,'')
+    .trim();
+}
+
+/* 🔹 Cargar múltiples archivos JSON */
 async function loadFromRepo(baseName){
   if(!baseName) baseName="data";
   DB=[]; let index=1,total=0;
@@ -109,9 +116,10 @@ async function loadFromRepo(baseName){
       const resp=await fetch(fileName);
       if(!resp.ok){ if(index===1) throw new Error("No se encontró "+fileName); else break; }
       const json=await resp.json();
-      if(Array.isArray(json)){ DB=DB.concat(json); total+=json.length;
+      if(Array.isArray(json)){
+        DB=DB.concat(json); total+=json.length;
         progress.innerText=`Cargado ${fileName} (${json.length} registros, total ${total})`;
-      } else console.warn(fileName+" no es un array válido");
+      }
       index++;
     }catch(e){ if(index===1) showMessage("Error: "+e.message); break; }
   }
@@ -133,14 +141,20 @@ function loadFromLocalFile(file){
   reader.readAsText(file);
 }
 
-/* 🔹 Buscar */
+/* 🔹 Buscar por DNI o Suministro */
 function searchTerm(term){
   if(!term){ currentResults=[]; renderResults(); return; }
   const q=term.trim().toLowerCase();
   currentResults=DB.filter(r=>{
-    return (r["DNI"] && r["DNI"].toString().toLowerCase().includes(q)) ||
-           (r["SUMINISTRO"] && r["SUMINISTRO"].toString().toLowerCase().includes(q)) ||
-           (r["CODIGO DE USUARIO"] && r["CODIGO DE USUARIO"].toString().toLowerCase().includes(q));
+    let match=false;
+    for(const k in r){
+      const nk=normalizeKey(k);
+      const val=(r[k]||'').toString().toLowerCase();
+      if((nk.includes('dni') || nk.includes('sumin')) && val.includes(q)){
+        match=true; break;
+      }
+    }
+    return match;
   });
   renderResults();
 }
@@ -155,34 +169,39 @@ function renderResults(){
   card.style.display='block';
   document.getElementById('countLbl').innerText=currentResults.length;
 
-  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTROPOBLADO','ESTADO'];
-
-  // Cabecera
+  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
   const headerRow=document.createElement('tr');
   headers.forEach(h=>{const th=document.createElement('th');th.textContent=h;headerRow.appendChild(th);});
   thead.appendChild(headerRow);
 
-  // Filas
   let totalMonto=0;
+
   currentResults.forEach(r=>{
     const tr=document.createElement('tr');
     headers.forEach(h=>{
-      let val=r[h]||'';
+      const td=document.createElement('td');
+      let val='';
+      const keyNorm=normalizeKey(h);
+      for(const k in r){
+        const nk=normalizeKey(k);
+        if(nk.includes(keyNorm) || keyNorm.includes(nk)){ val=r[k]; break; }
+      }
       if(h==='MONTO'){
         const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,''));
         if(!isNaN(num)) totalMonto+=num;
       }
-      const td=document.createElement('td');td.textContent=val;tr.appendChild(td);
+      td.textContent=val||'';
+      tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
 
-  // Fila total
-  const trTotal=document.createElement('tr');trTotal.classList.add('total-row');
+  const trTotal=document.createElement('tr');
+  trTotal.classList.add('total-row');
   headers.forEach(h=>{
     const td=document.createElement('td');
-    if(h==='MONTO'){td.textContent=totalMonto.toFixed(2);}
-    else if(h==='DNI'){td.textContent='TOTAL';}
+    if(h==='DNI'){ td.textContent='TOTAL'; td.style.fontWeight='bold'; }
+    else if(h==='MONTO'){ td.textContent=totalMonto.toFixed(2); td.style.fontWeight='bold'; }
     trTotal.appendChild(td);
   });
   tbody.appendChild(trTotal);
@@ -191,16 +210,22 @@ function renderResults(){
 /* 🔹 Exportar a Excel */
 function exportToExcel(){
   if(!currentResults.length){showMessage('No hay resultados');return;}
-  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTROPOBLADO','ESTADO'];
+  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
   const ws_data=[headers];
   let totalMonto=0;
   currentResults.forEach(r=>{
-    const row=headers.map(h=>{
-      const val=r[h]||''; if(h==='MONTO'){const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,''));if(!isNaN(num))totalMonto+=num;} return val;
+    const row=[];
+    headers.forEach(h=>{
+      let val=''; const keyNorm=normalizeKey(h);
+      for(const k in r){const nk=normalizeKey(k); if(nk.includes(keyNorm)||keyNorm.includes(nk)){ val=r[k]; break; }}
+      if(h==='MONTO'){ const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,'')); if(!isNaN(num)) totalMonto+=num; }
+      row.push(val||'');
     });
     ws_data.push(row);
   });
-  const totalRow=Array(headers.length).fill(''); totalRow[0]='TOTAL'; totalRow[6]=totalMonto.toFixed(2); ws_data.push(totalRow);
+  const totalRow=Array(headers.length).fill('');
+  totalRow[0]='TOTAL'; totalRow[6]=totalMonto.toFixed(2);
+  ws_data.push(totalRow);
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(ws_data);
   XLSX.utils.book_append_sheet(wb,ws,'Resultados');
   const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
@@ -214,15 +239,21 @@ function exportToPDF(){
   const img=document.getElementById('repo-logo');
   try{if(img && img.complete && img.naturalWidth!==0) doc.addImage(img,'PNG',40,20,80,40);}catch(e){}
   doc.setFontSize(14); doc.text('Reporte - Consulta Estado FISE',150,40);
-  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTROPOBLADO','ESTADO'];
+  const headers=['DNI','UU.NN','CODIGO DE USUARIO','APELLIDOS Y NOMBRES','PERIODO','N° BOLETA','MONTO','DISTRITO','CENTRO POBLADO','ESTADO'];
   const rows=[]; let totalMonto=0;
   currentResults.forEach(r=>{
-    const row=headers.map(h=>{
-      const val=r[h]||''; if(h==='MONTO'){const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,''));if(!isNaN(num))totalMonto+=num;} return val;
+    const row=[];
+    headers.forEach(h=>{
+      let val=''; const keyNorm=normalizeKey(h);
+      for(const k in r){const nk=normalizeKey(k); if(nk.includes(keyNorm)||keyNorm.includes(nk)){ val=r[k]; break; }}
+      if(h==='MONTO'){ const num=parseFloat(val.toString().replace(/[^0-9.-]+/g,'')); if(!isNaN(num)) totalMonto+=num; }
+      row.push(val||'');
     });
     rows.push(row);
   });
-  const totalRow=Array(headers.length).fill(''); totalRow[0]='TOTAL'; totalRow[6]=totalMonto.toFixed(2); rows.push(totalRow);
+  const totalRow=Array(headers.length).fill('');
+  totalRow[0]='TOTAL'; totalRow[6]=totalMonto.toFixed(2);
+  rows.push(totalRow);
   doc.autoTable({head:[headers],body:rows,startY:80,styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:[13,71,161]}});
   doc.save('resultados_fise.pdf');
 }
@@ -238,3 +269,4 @@ document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==
 </script>
 </body>
 </html>
+
